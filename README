@@ -1,4 +1,23 @@
-swank-crew
+
+Swank Crew
 ==========
 
-Common Lisp distributed computation framework implemented with Swank Client
+Swank Crew is a distributed computation framework written in Common Lisp that
+uses Swank Client to evaluate forms on remote hosts.
+
+
+The Swank Crew API
+==================
+
+connect-local-workers           Connect to a set of worker Lisps running on localhost.
+connect-workers                 Connect to a set of worker Lisps running on remote hosts.
+disconnect-workers              Disconnect all the workers in a worker pool.
+eval-form-all-workers           Evaluate a form on all the workers in a worker pool.
+eval-form-repeatedly            Evaluate a form repeatedly and collect the results.
+eval-repeatedly-async-state     Evaluate a form repeatedly with async updates to worker state.
+parallel-mapcar                 Evaluate a function on all elements of a list.
+parallel-reduce                 Evaluate a function on all elements of a list and reduce the
+                                results as they arrive on the master.
+
+For more information, see the documentation strings for the above functions in
+master.lisp and the example code in swank-crew_test.lisp.
