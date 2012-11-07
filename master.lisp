@@ -75,7 +75,7 @@
   ((id :reader id
        :type symbol
        :initform (gentemp (string-upcase
-                           (format nil "~A-~D-" (machine-instance) (sb-posix:getpid)))
+                           (format nil "~A-~D-" (machine-instance) (osicat-posix:getpid)))
                           "KEYWORD")
        :documentation "The worker pool's ID.")
    (master-host-name :reader master-host-name

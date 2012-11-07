@@ -40,6 +40,7 @@
   :depends-on (bordeaux-threads
                com.google.base
                com.google.flag
+               osicat
                swank-client)
   :in-order-to ((test-op (test-op swank-crew-test)))
   :components

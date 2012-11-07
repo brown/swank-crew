@@ -140,7 +140,7 @@
 
 (defun ensure-master-server (port)
   (unless *master-server*
-    (let ((swank::*loopback-interface* (sb-unix:unix-gethostname)))
+    (let ((swank::*loopback-interface* (osicat-posix:gethostname)))
       (swank:create-server :port port :dont-close t))
     (setf *master-server* t)))
 
@@ -176,7 +176,7 @@ workers to be disconnected when control exits BODY."
 
 (deftest test-connect-to-master ()
   (with-local-workers (pool 3)
-    (swank-client:with-slime-connection (master (sb-unix:unix-gethostname) +master-port+)
+    (swank-client:with-slime-connection (master (osicat-posix:gethostname) +master-port+)
       (is (= (swank-client:slime-eval '(+ 1 1) master) 2)))
     (is (= (worker-count pool) 3))))
 
