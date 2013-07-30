@@ -1,0 +1,45 @@
+--- dist/slime/swank.lisp	2013-01-11 04:00:30.000000000 -0500
++++ slime/swank.lisp	2013-03-17 04:17:45.990394222 -0400
+@@ -10,6 +10,9 @@
+ ;;; them separately for each Lisp implementation. These extensions are
+ ;;; available to us here via the `SWANK-BACKEND' package.
+ 
++(defpackage #:swank-client
++  (:documentation "A client interface to Swank servers."))
++
+ (defpackage :swank
+   (:use :cl :swank-backend :swank-match :swank-rpc)
+   (:export #:startup-multiprocessing
+@@ -592,9 +595,8 @@
+ This connection can be used to talk with Emacs when no specific
+ connection is in use, i.e. *EMACS-CONNECTION* is NIL.
+ 
+-The default connection is defined (quite arbitrarily) as the most
+-recently established one."
+-  (car *connections*))
++The default connection is defined (quite arbitrarily) as the oldest one."
++  (first (reverse *connections*)))
+ 
+ (defun start-sentinel () 
+   (unless (find-registered 'sentinel)
+@@ -1057,6 +1059,20 @@
+        (cond (thread
+               (add-active-thread connection thread)
+               (send-event thread `(:emacs-rex ,form ,package ,id)))
++             ;; Thread IDs greater than 10000 indicate that this event is intended for a remote
++             ;; worker Lisp, not a thread of this Lisp image.  Forward the event to the worker.
++             ;; TODO(brown): Create a new package just for Swank to avoid using "::" here to access
++             ;; non-exported symbols of SWANK-CLIENT.
++             ((> thread-id 10000)
++              (let ((connection (swank-client::find-connection-for-thread-id thread-id)))
++                (if connection
++                    (let ((thread-id (swank-client::server-thread-id thread-id)))
++                      (swank-client::slime-send `(:emacs-rex ,form ,package ,thread-id ,id)
++                                                connection))
++                    (encode-message
++                     `(:invalid-rpc ,id
++                                    ,(format nil "Connection not found for thread: ~s" thread-id))
++                     (current-socket-io)))))
+              (t
+               (encode-message 
+                (list :invalid-rpc id

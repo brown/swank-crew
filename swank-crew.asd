@@ -37,6 +37,14 @@
 (in-package #:swank-crew-system)
 
 (defsystem swank-crew
+  :name "Swank Crew"
+  :description "Distributed master/worker computing framework."
+  :long-description "Swank Crew is a framework for developing distributed master/worker
+applications.  It uses Slime's Swank protocol to transport data between
+machines, making the debugging of distributed applications easier."
+  :version "1.0"
+  :author "Robert Brown"
+  :license "New BSD license.  See the copyright messages in individual files."
   :depends-on (bordeaux-threads
                com.google.base
                com.google.flag

@@ -5,6 +5,13 @@ Swank Crew
 Swank Crew is a distributed computation framework written in Common Lisp that
 uses Swank Client to evaluate forms on remote hosts.
 
+Swank Crew works with Emacs and Slime to make developing distributed
+applications easier.  Typically, you interactively develop code on a master
+machine using Slime.  Code on the master uses the Swank Crew API to farm out
+work to a gang of worker machines.  If code on a worker generates an exception,
+a Slime stack trace window pops up and you can interactively debug the problem
+using your existing Slime connection to the master.
+
 
 The Swank Crew API
 ==================
@@ -28,3 +35,18 @@ parallel-reduce                 Use the workers in a worker pool to evaluate a
 
 For more information, see the documentation strings for the above functions in
 master.lisp and the example code in swank-crew_test.lisp.
+
+
+Installation
+============
+
+Swank Crew functions best when used with Slime.  In order to implement the
+distributed Slime debugging features described above, you must patch swank.lisp
+in the directory where you installed Slime:
+
+    patch path/to/slime/swank.lisp swank.lisp-patch
+
+The change to swank.lisp implements the forwarding of Swank protocol messages
+from worker machines through the master's Swank server back to your Slime
+client.  It's needed to debug problems on worker machines using your Slime
+connection to the master.
