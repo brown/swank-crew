@@ -28,14 +28,6 @@
 
 ;;;; Author: brown@google.com (Robert Brown)
 
-(in-package #:common-lisp-user)
-
-(defpackage #:swank-crew-test-system
-  (:documentation "System definition for testing the SWANK-CREW package.")
-  (:use #:common-lisp #:asdf))
-
-(in-package #:swank-crew-test-system)
-
 (defsystem swank-crew-test
   :depends-on (swank-crew hu.dwim.stefil)
   :components

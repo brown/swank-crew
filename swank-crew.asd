@@ -28,18 +28,11 @@
 
 ;;;; Author: brown@google.com (Robert Brown)
 
-(in-package #:common-lisp-user)
-
-(defpackage #:swank-crew-system
-  (:documentation "ASDF system definition for package SWANK-CREW.")
-  (:use #:common-lisp #:asdf))
-
-(in-package #:swank-crew-system)
-
 (defsystem swank-crew
   :name "Swank Crew"
   :description "Distributed master/worker computing framework."
-  :long-description "Swank Crew is a framework for developing distributed master/worker
+  :long-description
+"Swank Crew is a framework for developing distributed master/worker
 applications.  It uses Slime's Swank protocol to transport data between
 machines, making the debugging of distributed applications easier."
   :version "1.0"
