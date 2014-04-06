@@ -31,7 +31,6 @@
 ;;;; Swank Crew code that runs on worker machines.
 
 (in-package #:swank-crew)
-(declaim #.*optimize-default*)
 
 (defvar *last-form-evaled* nil "The last form evaluated by the worker.")
 

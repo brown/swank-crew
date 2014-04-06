@@ -41,7 +41,6 @@
   (:export #:test-swank-crew))
 
 (in-package #:swank-crew-test)
-(declaim #.*optimize-default*)
 
 (defsuite (test-swank-crew :in root-suite) ()
   (run-child-tests))

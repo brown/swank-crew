@@ -31,7 +31,6 @@
 ;;;; Swank Crew code that runs on the master machine.
 
 (in-package #:swank-crew)
-(declaim #.*optimize-default*)
 
 (deftype port () "A non-privileged TCP/IP port number." '(integer 1024 65535))
 
