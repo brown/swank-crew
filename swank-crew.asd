@@ -35,7 +35,7 @@
 "Swank Crew is a framework for developing distributed master/worker
 applications.  It uses Slime's Swank protocol to transport data between
 machines, making the debugging of distributed applications easier."
-  :version "1.1"
+  :version "1.3"
   :author "Robert Brown"
   :license "New BSD license.  See the copyright messages in individual files."
   :depends-on (bordeaux-threads

@@ -16,10 +16,8 @@ using your existing Slime connection to the master.
 The Swank Crew API
 ==================
 
-connect-local-workers           Create a worker pool containing a set of worker
-                                Lisps running on localhost.
 connect-workers                 Create a worker pool containing a set of worker
-                                Lisps running on remote hosts.
+                                Lisps.
 disconnect-workers              Disconnect all the workers in a worker pool.
 eval-form-all-workers           Evaluate a form on all the workers in a worker pool.
 eval-form-repeatedly            Evaluate a form repeatedly on the workers in a pool

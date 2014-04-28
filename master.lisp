@@ -189,17 +189,6 @@ that it is invoked when the connection closes."))
 (defmethod connect-worker ((connect-info connect-info) close-handler)
   (swank-client:slime-connect (host-name connect-info) (port connect-info) close-handler))
 
-(defun connect-local-workers (base-port worker-count)
-  "Makes Swank connections to WORKER-COUNT workers on \"localhost\" and returns
-a WORKER-POOL containing them.  The Swank servers for the workers must be
-listening on WORKER-COUNT consecutively numbered ports, starting from
-BASE-PORT."
-  (let ((connect-infos
-          (loop repeat worker-count
-                for port from base-port
-                collect (make-instance 'connect-info :host-name "localhost" :port port))))
-    (make-worker-pool connect-infos #'connect-worker)))
-
 (defun connect-workers (host/port-alist)
   "Makes Swank connections to all the workers in HOST/PORT-ALIST and returns a
 WORKER-POOL containing them.  HOST/PORT-ALIST is a list of (host-name . port)

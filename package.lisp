@@ -37,7 +37,6 @@
         #:com.google.flag)
   ;; master.lisp
   (:export #:*rex-port*
-           #:connect-local-workers
            #:connect-workers
            #:disconnect-workers
            #:eval-form-all-workers
