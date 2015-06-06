@@ -29,6 +29,11 @@
 ;;;; Author: brown@google.com (Robert Brown)
 
 (defsystem swank-crew-test
+  :name "Swank Crew test"
+  :description "Test code for package SWANK-CREW."
+  :version "1.3"
+  :author "Robert Brown"
+  :license "New BSD license.  See the copyright messages in individual files."
   :depends-on (swank-crew hu.dwim.stefil)
   :components
   ((:file "swank-crew_test")))
