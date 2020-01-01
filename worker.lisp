@@ -26,7 +26,7 @@
 ;;;; (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 ;;;; OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-;;;; Author: brown@google.com (Robert Brown)
+;;;; Author: Robert Brown <robert.brown@gmail.com>
 
 ;;;; Swank Crew code that runs on worker machines.
 
@@ -69,67 +69,65 @@ FORM.  In addition, the returned expression arranges to update the values of
   "Mapping from worker pool IDs to the number of replay forms we have evaluated
 on this client for that pool.")
 
-(defun fetch-and-evaluate (master-host-name master-rex-port worker-pool-id local-count)
+(defun fetch-and-evaluate (master-host-name master-swank-port worker-pool-id local-count)
   "Fetches from the master and then evaluates all forms required to catch up
 with other workers in the pool identified by WORKER-POOL-ID on the master.  All
 replay forms after the first LOCAL-COUNT forms are fetched by making a Swank
-connection to MASTER-REX-PORT on host MASTER-HOST-NAME."
-  (swank-client:with-slime-connection (connection master-host-name master-rex-port)
-    (when connection
-      (let ((forms
-              (handler-case
-                  (swank-client:slime-eval `(unevaluated-replay-forms ,worker-pool-id ,local-count)
-                                           connection)
-                (swank-client:slime-network-error ()
-                  '()))))
-        (dolist (form forms)
-          (eval (debugging-form form))
-          (incf (gethash worker-pool-id *replay-forms-counts* 0)))))))
+connection to host MASTER-HOST-NAME on port MASTER-SWANK-PORT."
+  (let ((forms
+          (handler-case
+              (swank-client:with-slime-connection (connection master-host-name master-swank-port)
+                (swank-client:slime-eval `(unevaluated-replay-forms ,worker-pool-id ,local-count)
+                                         connection))
+            (swank-client:slime-network-error ()
+              '()))))
+    (dolist (form forms)
+      (eval (debugging-form form))
+      (incf (gethash worker-pool-id *replay-forms-counts* 0)))))
 
-(defun catch-up-if-necessary (master-host-name master-rex-port worker-pool-id pool-count)
+(defun catch-up-if-necessary (master-host-name master-swank-port worker-pool-id pool-count)
   "Ensures that the current client is up to date, that it has evaluated all
 POOL-COUNT replay forms associated with the pool identified by WORKER-POOL-ID.
 If it is necessary to evaluate forms in order to catch up, they are fetched by
-making a Swank connection to MASTER-REX-PORT on host MASTER-HOST-NAME."
+making a Swank connection to host MASTER-HOST-NAME on port MASTER-SWANK-PORT."
   (let ((up-to-date nil))
     (bordeaux-threads:with-lock-held (*replay-forms-counts-lock*)
       (let ((count (gethash worker-pool-id *replay-forms-counts* 0)))
         (when (< count pool-count)
-          (fetch-and-evaluate master-host-name master-rex-port worker-pool-id count))
+          (fetch-and-evaluate master-host-name master-swank-port worker-pool-id count))
         (when (= (gethash worker-pool-id *replay-forms-counts* 0) pool-count)
           (setf up-to-date t))))
     (unless up-to-date (error "worker failed to catch up"))))
 
-(defun evaluate-form (form master-host-name master-rex-port worker-pool-id pool-count
+(defun evaluate-form (form master-host-name master-swank-port worker-pool-id pool-count
                       replay-required)
   "Evaluates FORM, but first ensures that this worker has evaluated all
 POOL-COUNT replay forms associated with the worker pool identified by
 WORKER-POOL-ID on the master.  When catching up is required, fetches forms by
-making a Swank connection to MASTER-REX-PORT on host MASTER-HOST-NAME.
-REPLAY-REQUIRED indicates whether FORM may need to be replayed in order to bring
-a worker up to date."
-  (catch-up-if-necessary master-host-name master-rex-port worker-pool-id pool-count)
+making a Swank connection to host MASTER-HOST-NAME on port MASTER-SWANK-PORT.
+REPLAY-REQUIRED indicates whether FORM may need to be replayed in order to
+bring a worker up to date."
+  (catch-up-if-necessary master-host-name master-swank-port worker-pool-id pool-count)
   (let ((result (eval (debugging-form form))))
     (when replay-required
       (bordeaux-threads:with-lock-held (*replay-forms-counts-lock*)
         (incf (gethash worker-pool-id *replay-forms-counts* 0))))
     result))
 
-(defun send-many-results (send-result master-host-name master-rex-port)
-  "Creates a Slime connection to MASTER-HOST-NAME on port MASTER-REX-PORT, then
-repeatedly calls SEND-RESULT with the new connection as argument.  Returns when
-SEND-RESULT returns NIL."
-  (swank-client:with-slime-connection (connection master-host-name master-rex-port)
-    (when connection
-      (loop while (handler-case
-                      (funcall send-result connection)
-                    (swank-client:slime-network-error ()
-                      nil))))))
+(defun send-many-results (send-result master-host-name master-swank-port)
+  "Creates a Slime connection to host MASTER-HOST-NAME on port MASTER-SWANK-PORT,
+then repeatedly calls SEND-RESULT with the new connection as argument.  Returns
+when SEND-RESULT returns NIL."
+  (handler-case
+      (swank-client:with-slime-connection (connection master-host-name master-swank-port)
+        (loop while (funcall send-result connection)))
+    (swank-client:slime-network-error ()
+      nil)))
 
-(defun repeatedly-evaluate (form id master-host-name master-rex-port)
-  "Evaluates FORM, which must return a function of no arguments, then calls that
-function repeatedly to produce results.  Each result is sent to the machine
-called MASTER-HOST-NAME by making a Swank connection to its MASTER-REX-PORT and
+(defun repeatedly-evaluate (form id master-host-name master-swank-port)
+  "Evaluates FORM, which must return a function of no arguments, then calls
+that function repeatedly to produce results.  Each result is sent to host
+MASTER-HOST-NAME by making a Swank connection on port MASTER-SWANK-PORT and
 remotely evaluating an expression that records the result.  ID is used on the
 master machine to correctly record the result."
   (setf *last-form-evaled* form)
@@ -141,18 +139,18 @@ master machine to correctly record the result."
                                       connection)))
       (bordeaux-threads:make-thread
        (lambda ()
-         (send-many-results #'send-result master-host-name master-rex-port)
+         (send-many-results #'send-result master-host-name master-swank-port)
          (clear-debugging-info))
        :name "repeatedly evaluate")
       ;; We must return a value that can be serialized.
       t)))
 
-(defun async-evaluate (form initial-state id master-host-name master-rex-port)
-  "Evaluates FORM, which must return a work function of one argument, then calls
-that function repeatedly to produce results, each time passing it the current
-computation state.  At first this state is INITIAL-STATE, but the master may
-update the state asynchronously.  Each work result is sent to the machine called
-MASTER-HOST-NAME by making a Swank connection to its MASTER-REX-PORT and
+(defun async-evaluate (form initial-state id master-host-name master-swank-port)
+  "Evaluates FORM, which must return a work function of one argument, then
+calls that function repeatedly to produce results, each time passing it the
+current computation state.  At first this state is INITIAL-STATE, but the
+master may update the state asynchronously.  Each work result is sent to host
+MASTER-HOST-NAME by making a Swank connection to port MASTER-SWANK-PORT and
 remotely evaluating an expression that records the result.  ID is used on the
 master machine to process results and on the worker to update the state."
   (let ((state initial-state)
@@ -172,7 +170,7 @@ master machine to process results and on the worker to update the state."
                    continue))))
         (bordeaux-threads:make-thread
          (lambda ()
-           (send-many-results #'send-result master-host-name master-rex-port)
+           (send-many-results #'send-result master-host-name master-swank-port)
            (clear-debugging-info))
          :name "async evaluate")
         ;; We must return a value that can be serialized.

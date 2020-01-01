@@ -26,12 +26,12 @@
 ;;;; (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 ;;;; OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-;;;; Author: brown@google.com (Robert Brown)
+;;;; Author: Robert Brown <robert.brown@gmail.com>
 
 (defsystem swank-crew-test
   :name "Swank Crew test"
   :description "Test code for package SWANK-CREW."
-  :version "1.3"
+  :version "1.4"
   :author "Robert Brown"
   :license "New BSD license.  See the copyright messages in individual files."
   :depends-on (swank-crew hu.dwim.stefil)
@@ -39,5 +39,4 @@
   ((:file "swank-crew_test")))
 
 (defmethod perform ((operation test-op) (component (eql (find-system 'swank-crew-test))))
-  ;; TODO(brown): Unit tests work when run manually, but fail when run from ASDF.  Fix the problem.
   (funcall (read-from-string "swank-crew-test:test-swank-crew")))

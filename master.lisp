@@ -26,20 +26,13 @@
 ;;;; (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 ;;;; OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-;;;; Author: brown@google.com (Robert Brown)
+;;;; Author: Robert Brown <robert.brown@gmail.com>
 
 ;;;; Swank Crew code that runs on the master machine.
 
 (in-package #:swank-crew)
 
 (deftype port () "A non-privileged TCP/IP port number." '(integer 1024 65535))
-
-(define-flag *rex-port*
-  :default-value nil
-  :selector "rex_port"
-  :type (or port null)
-  :parser parse-integer
-  :help "Port number to use for remote execution connections.")
 
 (defclass connect-info ()
   ((host-name :accessor host-name
@@ -73,18 +66,19 @@
 (defclass worker-pool ()
   ((id :reader id
        :type symbol
-       :initform (gentemp (string-upcase
-                           (format nil "~A-~D-" (machine-instance) (osicat-posix:getpid)))
-                          "KEYWORD")
+       :initarg :id
        :documentation "The worker pool's ID.")
    (master-host-name :reader master-host-name
                      :type string
-                     :initform (machine-instance)
-                     :documentation "Host name of the master.")
-   (rex-port :reader rex-port
-             :type (or port null)
-             :initform *rex-port*
-             :documentation "Port number for Swank remote execution requests to the master.")
+                     :initarg :master-host-name
+                     :documentation
+"Host name of the master.  Used by workers to return results to the master.")
+   (master-swank-port :reader master-swank-port
+                      :type port
+                      :initarg :master-swank-port
+                      :documentation
+"Port on the master on which a Swank server is listening.  Used by workers to
+return results to the master.")
    (workers :reader workers
             :writer (setf %workers)     ; only used when a worker pool is constructed
             :type vector
@@ -164,8 +158,11 @@ WORKER-POOL, so it may output inconsistent information."
   (bordeaux-threads:with-lock-held (*worker-pools-lock*)
     (gethash worker-pool-id *worker-pools*)))
 
-(defun make-worker-pool (connect-infos connect-worker)
-  (let* ((worker-pool (make-instance 'worker-pool))
+(defun make-worker-pool (master-host-name master-swank-port connect-infos connect-worker)
+  (let* ((worker-pool (make-instance 'worker-pool
+                                     :id (gentemp (string-upcase master-host-name) "KEYWORD")
+                                     :master-host-name master-host-name
+                                     :master-swank-port master-swank-port))
          (workers
            (loop for connect-info in connect-infos
                  for worker = (make-instance 'worker :connect-info connect-info)
@@ -189,14 +186,15 @@ that it is invoked when the connection closes."))
 (defmethod connect-worker ((connect-info connect-info) close-handler)
   (swank-client:slime-connect (host-name connect-info) (port connect-info) close-handler))
 
-(defun connect-workers (host/port-alist)
+(defun connect-workers (host/port-alist master-host-name master-swank-port)
   "Makes Swank connections to all the workers in HOST/PORT-ALIST and returns a
 WORKER-POOL containing them.  HOST/PORT-ALIST is a list of (host-name . port)
-pairs"
+pairs.  MASTER-HOST-NAME and MASTER-SWANK-PORT are a host name and Swank port
+that workers can use to return results to the master."
   (let ((connect-infos
           (loop for (host-name . port) in host/port-alist
                 collect (make-instance 'connect-info :host-name host-name :port port))))
-    (make-worker-pool connect-infos #'connect-worker)))
+    (make-worker-pool master-host-name master-swank-port connect-infos #'connect-worker)))
 
 (defun disconnect-workers (worker-pool)
   "Closes the Swank connections of all connected workers in WORKER-POOL."
@@ -371,10 +369,9 @@ considered to be caught up."
   (let ((forms-count (bordeaux-threads:with-lock-held ((replay-forms-lock worker-pool))
                        (length (replay-forms worker-pool))))
         (master-host-name (master-host-name worker-pool))
-        (rex-port (rex-port worker-pool))
+        (master-swank-port (master-swank-port worker-pool))
         (worker-pool-id (id worker-pool)))
-    (unless rex-port (error "no listening Slime server on master"))
-    `(evaluate-form ',form ,master-host-name ,rex-port ,worker-pool-id ,forms-count
+    `(evaluate-form ',form ,master-host-name ,master-swank-port ,worker-pool-id ,forms-count
                     ,replay-required)))
 
 (defun dispatch-work (worker-pool make-work list result-done retain-workers replay-required)
@@ -587,10 +584,11 @@ continue to call RECORD-REPEATED-RESULT with additional results."
 client is caught up and then evaluates FORM for the repeated evaluation request
 identified by ID."
   (let ((master-host-name (master-host-name worker-pool))
-        (rex-port (rex-port worker-pool)))
-    (ensure-caught-up-then-evaluate `(repeatedly-evaluate ',form ,id ,master-host-name ,rex-port)
-                                    worker-pool
-                                    nil)))
+        (master-swank-port (master-swank-port worker-pool)))
+    (ensure-caught-up-then-evaluate
+     `(repeatedly-evaluate ',form ,id ,master-host-name ,master-swank-port)
+     worker-pool
+     nil)))
 
 (defun eval-form-repeatedly (worker-pool result-count form
                              &key (worker-count (when worker-pool (worker-count worker-pool))))
@@ -699,9 +697,9 @@ continue to call ASYNC-RESULT with additional results."
 client is caught up and then evaluates FORM for the async evaluation request
 identified by ID."
   (let ((master-host-name (master-host-name worker-pool))
-        (rex-port (rex-port worker-pool)))
+        (master-swank-port (master-swank-port worker-pool)))
     (ensure-caught-up-then-evaluate
-     `(async-evaluate ',form ',initial-state ,id ,master-host-name ,rex-port)
+     `(async-evaluate ',form ',initial-state ,id ,master-host-name ,master-swank-port)
      worker-pool
      nil)))
 

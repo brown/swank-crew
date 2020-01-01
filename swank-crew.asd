@@ -26,7 +26,7 @@
 ;;;; (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 ;;;; OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-;;;; Author: brown@google.com (Robert Brown)
+;;;; Author: Robert Brown <robert.brown@gmail.com>
 
 (defsystem swank-crew
   :name "Swank Crew"
@@ -35,13 +35,11 @@
 "Swank Crew is a framework for developing distributed master/worker
 applications.  It uses Slime's Swank protocol to transport data between
 machines, making the debugging of distributed applications easier."
-  :version "1.3"
+  :version "1.4"
   :author "Robert Brown"
   :license "New BSD license.  See the copyright messages in individual files."
   :depends-on (bordeaux-threads
                com.google.base
-               com.google.flag
-               osicat
                swank-client)
   :in-order-to ((test-op (test-op swank-crew-test)))
   :components

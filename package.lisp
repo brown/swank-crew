@@ -26,18 +26,16 @@
 ;;;; (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 ;;;; OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-;;;; Author: brown@google.com (Robert Brown)
+;;;; Author: Robert Brown <robert.brown@gmail.com>
 
 (in-package #:common-lisp-user)
 
 (defpackage #:swank-crew
   (:documentation "Evaluate expressions on remote Lisps using the Swank protocol.")
   (:use #:common-lisp
-        #:com.google.base
-        #:com.google.flag)
+        #:com.google.base)
   ;; master.lisp
-  (:export #:*rex-port*
-           #:connect-workers
+  (:export #:connect-workers
            #:disconnect-workers
            #:eval-form-all-workers
            #:eval-form-repeatedly

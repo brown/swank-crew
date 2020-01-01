@@ -26,7 +26,7 @@
 ;;;; (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 ;;;; OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-;;;; Author: brown@google.com (Robert Brown)
+;;;; Author: Robert Brown <robert.brown@gmail.com>
 
 ;;;; Test the code in the SWANK-CREW package.
 
@@ -64,6 +64,7 @@
 
 (defun test-eval-form-repeatedly (pool)
   (let ((worker-count (if (null pool) 1 (worker-count pool))))
+    (is (equal (eval-form-repeatedly pool 0 '(constantly 42)) '()))
     (is (equal (eval-form-repeatedly pool 10 '(constantly (cons 1 2)))
                (make-list 10 :initial-element (cons 1 2))))
     (is (equal (eval-form-repeatedly pool 20 '(constantly (cons 3 4))
@@ -133,42 +134,44 @@
 
 ;;; Code to create a locally running Swank master and several Swank workers.
 
-(defvar *server-port* 10000)
-
-(defun unused-port ()
-  #+google3 (port-picker:unused-port)
-  #-google3 (incf *server-port*))
-
 (defvar *master-server* nil)
 
 (defun master-server ()
   (unless *master-server*
-    (let ((swank::*loopback-interface* (osicat-posix:gethostname)) ; XXXXXXXXXXXXXXXXXXXX
-          (port (unused-port)))
-      (is port)
-      (swank:create-server :port port :dont-close t)
+    (let ((port (swank:create-server :port 0 :dont-close t)))
       (setf *master-server* port)))
   *master-server*)
 
 (defun create-workers (worker-count)
   "Creates WORKER-COUNT worker threads, each running a Swank server.  Returns a
-list of the ports the Swank servers are listening on."
-  (loop repeat worker-count
-        collect (let ((swank-port (unused-port))
-                      ;; Make thread-local copies of the global state required for each worker, so
-                      ;; multiple workers can run happily in the same Lisp.
-                      (swank-crew::*replay-forms-counts-lock* (bordeaux-threads:make-lock))
-                      (swank-crew::*replay-forms-counts* (make-hash-table)))
-                  (bordeaux-threads:make-thread (lambda () (swank:create-server :port swank-port))
-                                                :name (format nil "local worker ~D" swank-port))
-                  (cons "localhost" swank-port))))
+host/port alist describing where the Swank worker servers are listening."
+  (let ((work-remaining worker-count)
+        (ports (make-array worker-count :initial-element nil))
+        (lock (bordeaux-threads:make-lock "create-workers"))
+        (ready (bordeaux-threads:make-condition-variable)))
+    (dotimes (i worker-count)
+      (let ((index i)
+            ;; Make thread-local copies of the global state required for each worker, so multiple
+            ;; workers can run happily in the same Lisp.
+            ;; TODO(brown): Use the :INITIAL-BINDINGS argument to MAKE-THREAD for portability.
+            (swank-crew::*replay-forms-counts-lock* (bordeaux-threads:make-lock))
+            (swank-crew::*replay-forms-counts* (make-hash-table)))
+        (bordeaux-threads:make-thread
+         (lambda ()
+           (bordeaux-threads:with-lock-held (lock)
+             (setf (aref ports index) (swank:create-server :port 0))
+             (decf work-remaining)
+             (bordeaux-threads:condition-notify ready))))))
+    (bordeaux-threads:with-lock-held (lock)
+      (loop until (zerop work-remaining)
+            do (bordeaux-threads:condition-wait ready lock)))
+    (loop for port across ports collect (cons "localhost" port))))
 
 (defmacro with-local-workers ((pool worker-count) &body body)
   "Wraps BODY in a LET form where POOL is bound to a newly created worker pool
 containing WORKER-COUNT workers, each running in a thread.  Arranges for the
 workers to be disconnected when control exits BODY."
-  `(let* ((*rex-port* (master-server))
-          (,pool (connect-workers (create-workers ,worker-count))))
+  `(let ((,pool (connect-workers (create-workers ,worker-count) "localhost" (master-server))))
      (unwind-protect
           (progn ,@body)
        (when ,pool
@@ -178,7 +181,7 @@ workers to be disconnected when control exits BODY."
 
 (deftest test-connect-to-master ()
   (with-local-workers (pool 3)
-    (swank-client:with-slime-connection (master (osicat-posix:gethostname) (master-server))
+    (swank-client:with-slime-connection (master "localhost" (master-server))
       (is (= (swank-client:slime-eval '(+ 1 1) master) 2)))
     (is (= (worker-count pool) 3))))
 
