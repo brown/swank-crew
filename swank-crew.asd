@@ -36,13 +36,26 @@
 applications.  It uses Slime's Swank protocol to transport data between
 machines, making the debugging of distributed applications easier."
   :version "1.4"
-  :author "Robert Brown"
+  :author "Robert Brown <robert.brown@gmail.com>"
   :license "New BSD license.  See the copyright messages in individual files."
   :depends-on (bordeaux-threads
                com.google.base
                swank-client)
-  :in-order-to ((test-op (test-op swank-crew-test)))
+  :in-order-to ((test-op (test-op swank-crew/test)))
   :components
   ((:file "package")
    (:file "master" :depends-on ("package"))
    (:file "worker" :depends-on ("package"))))
+
+(defsystem swank-crew/test
+  :name "Swank Crew test"
+  :description "Test code for package SWANK-CREW."
+  :version "1.4"
+  :author "Robert Brown <robert.brown@gmail.com>"
+  :license "New BSD license.  See the copyright messages in individual files."
+  :depends-on (swank-crew hu.dwim.stefil)
+  :components
+  ((:file "swank-crew-test")))
+
+(defmethod perform ((operation test-op) (component (eql (find-system 'swank-crew/test))))
+  (symbol-call 'swank-crew-test 'test-swank-crew))
