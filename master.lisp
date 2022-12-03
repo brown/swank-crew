@@ -38,27 +38,30 @@
   ((host-name :accessor host-name
               :type string
               :initarg :host-name
+              :initform (missing-argument)
               :documentation "Host the worker is running on.")
    (port :accessor port
          :type port
          :initarg :port
+         :initform (missing-argument)
          :documentation "Port on which the worker's Swank server is listening for connections."))
   (:documentation "Information needed when connecting to a worker's Swank server."))
 
 (defclass worker ()
-  ((lock :reader lock
-         :initform (bordeaux-threads:make-lock "worker")
-         :documentation "Lock protecting the mutable data of this worker.")
-   (connect-info :reader connect-info
+  ((connect-info :reader connect-info
                  :type connect-info
                  :initarg :connect-info
+                 :initform (missing-argument)
                  :documentation "Information used when connecting to this worker.")
+   (lock :reader lock
+         :initform (make-lock "worker")
+         :documentation "Lock protecting SET-WORKER and CONNECTION.")
    (set-worker :accessor set-worker
                :type function
                :initform #'identity
                :documentation "Function called to record which worker is evaluating a form.")
    (connection :accessor connection
-               :type (or null swank-client:swank-connection)
+               :type (or null swank-connection)
                :initform nil
                :documentation "When non-NIL, an open Swank connection to the worker."))
   (:documentation "A remote Lisp running a Swank server."))
@@ -67,15 +70,18 @@
   ((id :reader id
        :type symbol
        :initarg :id
+       :initform (missing-argument)
        :documentation "The worker pool's ID.")
    (master-host-name :reader master-host-name
                      :type string
                      :initarg :master-host-name
+                     :initform (missing-argument)
                      :documentation
 "Host name of the master.  Used by workers to return results to the master.")
    (master-swank-port :reader master-swank-port
                       :type port
                       :initarg :master-swank-port
+                      :initform (missing-argument)
                       :documentation
 "Port on the master on which a Swank server is listening.  Used by workers to
 return results to the master.")
@@ -85,14 +91,14 @@ return results to the master.")
             :initform #()
             :documentation "Vector containing all workers in the worker pool.")
    (lock :reader lock
-         :initform (bordeaux-threads:make-lock "worker pool")
+         :initform (make-lock "worker pool")
          :documentation "Lock protecting IDLE-WORKERS, WORKER-AVAILABLE, and DISCONNECTING.")
    (idle-workers :accessor idle-workers
                  :type list
                  :initform '()
                  :documentation "List of currently idle workers.")
    (worker-available :reader worker-available
-                     :initform (bordeaux-threads:make-condition-variable)
+                     :initform (make-condition-variable)
                      :documentation "Condition signaled when a worker becomes idle.")
    (disconnecting :accessor disconnecting
                   :initform nil
@@ -100,7 +106,7 @@ return results to the master.")
 "Set non-NIL when the worker pool is being torn down to tell the reconnector
 thread it should exit.")
    (replay-forms-lock :reader replay-forms-lock
-                      :initform (bordeaux-threads:make-lock "replay forms lock")
+                      :initform (make-lock "replay forms lock")
                       :documentation "Lock that protects REPLAY-FORMS.")
    (replay-forms :accessor replay-forms
                  :type list
@@ -144,18 +150,18 @@ WORKER-POOL, so it may output inconsistent information."
       (format stream "id: ~S workers: ~D idle: ~D busy: ~D disconnected: ~D"
               (id worker-pool) (worker-count worker-pool) idle busy disconnected))))
 
-(defvar *worker-pools-lock* (bordeaux-threads:make-lock "worker pools lock")
+(defvar *worker-pools-lock* (make-lock "worker pools lock")
   "Lock protecting access to *WORKER-POOLS*.")
 
 (defvar *worker-pools* (make-hash-table) "Mapping from worker pool IDs to active worker pools.")
 
 (defmethod initialize-instance :after ((worker-pool worker-pool) &key)
-  (bordeaux-threads:with-lock-held (*worker-pools-lock*)
+  (with-lock-held (*worker-pools-lock*)
     (setf (gethash (id worker-pool) *worker-pools*) worker-pool)))
 
 (defun find-worker-pool (worker-pool-id)
   "Returns the worker pool identified by WORKER-POOL-ID."
-  (bordeaux-threads:with-lock-held (*worker-pools-lock*)
+  (with-lock-held (*worker-pools-lock*)
     (gethash worker-pool-id *worker-pools*)))
 
 (defun make-worker-pool (master-host-name master-swank-port connect-infos connect-worker)
@@ -174,7 +180,7 @@ WORKER-POOL, so it may output inconsistent information."
                  collect worker)))
     (setf (%workers worker-pool) (coerce workers 'vector)
           (idle-workers worker-pool) workers)
-    (bordeaux-threads:make-thread (lambda () (reconnect-workers worker-pool)) :name "reconnector")
+    (make-thread (lambda () (reconnect-workers worker-pool)) :name "reconnector")
     worker-pool))
 
 (defgeneric connect-worker (connect-info close-handler)
@@ -184,7 +190,7 @@ CONNECT-INFO.  Passes the thunk CLOSE-HANDLER to SWANK-CLIENT:SLIME-CONNECT, so
 that it is invoked when the connection closes."))
 
 (defmethod connect-worker ((connect-info connect-info) close-handler)
-  (swank-client:slime-connect (host-name connect-info) (port connect-info) close-handler))
+  (slime-connect (host-name connect-info) (port connect-info) close-handler))
 
 (defun connect-workers (host/port-alist master-host-name master-swank-port)
   "Makes Swank connections to all the workers in HOST/PORT-ALIST and returns a
@@ -198,7 +204,7 @@ that workers can use to return results to the master."
 
 (defun disconnect-workers (worker-pool)
   "Closes the Swank connections of all connected workers in WORKER-POOL."
-  (bordeaux-threads:with-lock-held ((lock worker-pool))
+  (with-lock-held ((lock worker-pool))
     (when (disconnecting worker-pool)
       (return-from disconnect-workers))
     ;; Signal that the worker pool is being torn down and make sure there are no idle workers
@@ -206,9 +212,9 @@ that workers can use to return results to the master."
     (setf (disconnecting worker-pool) t)
     (setf (idle-workers worker-pool) '()))
   (flet ((disconnect (worker)
-           (bordeaux-threads:with-lock-held ((lock worker))
+           (with-lock-held ((lock worker))
              (when (connection worker)
-               (swank-client:slime-close (connection worker))))))
+               (slime-close (connection worker))))))
     ;; Disconnect all workers.
     (loop for worker across (workers worker-pool) do (disconnect worker)))
   (values))
@@ -228,46 +234,46 @@ the connection closes."))
   "Reconnects disconnected workers in WORKER-POOL."
   (loop
     (sleep +worker-reconnect-interval+)
-    (bordeaux-threads:with-lock-held ((lock worker-pool))
+    (with-lock-held ((lock worker-pool))
       (when (disconnecting worker-pool)
         (return-from reconnect-workers)))
     (loop for worker across (workers worker-pool) do
       (let ((worker worker))
-        (when (bordeaux-threads:with-lock-held ((lock worker))
+        (when (with-lock-held ((lock worker))
                 (unless (connection worker)
                   (let ((close-handler (lambda () (handle-connection-closed worker worker-pool))))
                     (setf (connection worker)
                           (reconnect-worker (connect-info worker) close-handler)))))
-          (bordeaux-threads:with-lock-held ((lock worker-pool))
+          (with-lock-held ((lock worker-pool))
             (when (member worker (idle-workers worker-pool))
               ;; We reconnected an idle worker, so notify the pool that a worker is available.
-              (bordeaux-threads:condition-notify (worker-available worker-pool)))))))))
+              (condition-notify (worker-available worker-pool)))))))))
 
 (defun allocate-worker (worker-pool &key worker-to-avoid)
   "Allocates and returns an idle worker from WORKER-POOL that is connected.  If
 WORKER-POOL is being shut down, then NIL is returned."
-  (bordeaux-threads:with-lock-held ((lock worker-pool))
+  (with-lock-held ((lock worker-pool))
     (loop
       (when (disconnecting worker-pool) (return nil))
       ;; Find a connected idle worker.
       (let ((idle-worker (find-if (lambda (worker)
                                     (unless (eql worker worker-to-avoid)
-                                      (bordeaux-threads:with-lock-held ((lock worker))
+                                      (with-lock-held ((lock worker))
                                         (connection worker))))
                                   (idle-workers worker-pool))))
         (when idle-worker
           (setf (idle-workers worker-pool) (remove idle-worker (idle-workers worker-pool)))
           (return idle-worker)))
-      (bordeaux-threads:condition-wait (worker-available worker-pool) (lock worker-pool)))))
+      (condition-wait (worker-available worker-pool) (lock worker-pool)))))
 
 (defun free-worker (worker worker-pool)
   "Changes the state of WORKER to idle, so that it's available for allocation."
-  (bordeaux-threads:with-lock-held ((lock worker-pool))
+  (with-lock-held ((lock worker-pool))
     (unless (disconnecting worker-pool)
       (push worker (idle-workers worker-pool))
       (when (connection worker)
         ;; The free worker is connected, so notify the pool that a worker is available.
-        (bordeaux-threads:condition-notify (worker-available worker-pool))))))
+        (condition-notify (worker-available worker-pool))))))
 
 (defun allocate-worker-and-evaluate (worker-pool form set-worker worker-done)
   "Allocates a connected worker from WORKER-POOL and sends it FORM to evaluate.
@@ -279,7 +285,7 @@ continuation what worker is evaluating FORM."
     (loop do
       (setf worker (allocate-worker worker-pool))
       (unless worker (return-from allocate-worker-and-evaluate nil))
-      (bordeaux-threads:with-lock-held ((lock worker))
+      (with-lock-held ((lock worker))
         ;; Has the connected idle worker we allocated just disconnected?
         (let ((connection (connection worker)))
           (if connection
@@ -289,8 +295,8 @@ continuation what worker is evaluating FORM."
                 ;; Ignore network errors.  If there is a network problem, socket keep alives will
                 ;; eventually discover that the connection is dead and HANDLE-CONNECTION-CLOSED
                 ;; will migrate the work to another worker.
-                (handler-case (swank-client:slime-eval-async form connection worker-done)
-                  (swank-client:slime-network-error ()))
+                (handler-case (slime-eval-async form connection worker-done)
+                  (slime-network-error ()))
                 (loop-finish))
               ;; The worker is disconnected, so remember it and look for another one.
               (push worker disconnected-idle-workers)))))
@@ -303,14 +309,14 @@ continuation what worker is evaluating FORM."
 is closed because of a call to SLIME-CLOSE, the death of the worker, or because
 of a communications error.  Moves all uncompleted work intended for
 DISCONNECTED-WORKER to another idle connected worker in WORKER-POOL."
-  (bordeaux-threads:with-lock-held ((lock disconnected-worker))
+  (with-lock-held ((lock disconnected-worker))
     (let ((old-connection (connection disconnected-worker))
           (disconnected-idle-workers '()))
-      (when (swank-client:slime-pending-evals-p old-connection)
+      (when (slime-pending-evals-p old-connection)
         (loop do
           (let ((worker (allocate-worker worker-pool :worker-to-avoid disconnected-worker)))
             (unless worker (return-from handle-connection-closed))
-            (bordeaux-threads:with-lock-held ((lock worker))
+            (with-lock-held ((lock worker))
               ;; Has the connected idle worker we allocated just disconnected?
               (let ((connection (connection worker)))
                 (if connection
@@ -321,8 +327,8 @@ DISCONNECTED-WORKER to another idle connected worker in WORKER-POOL."
                       ;; Ignore Slime network errors.  If there is a network problem, socket keep
                       ;; alives will eventually discover that the connection is dead and
                       ;; HANDLE-CONNECTION-CLOSED will migrate the pending work again.
-                      (handler-case (swank-client:slime-migrate-evals old-connection connection)
-                        (swank-client:slime-network-error ()))
+                      (handler-case (slime-migrate-evals old-connection connection)
+                        (slime-network-error ()))
                       (loop-finish))
                     ;; The worker is disconnected, so remember it and look for another one.
                     (push worker disconnected-idle-workers))))))
@@ -349,7 +355,7 @@ the member's position in LIST and MAKE-WORK's result."
 (defun add-evaluated-form (worker-pool form)
   "Adds FORM to the set of forms that need to be evaluated on a new worker when
 it joins WORKER-POOL."
-  (bordeaux-threads:with-lock-held ((replay-forms-lock worker-pool))
+  (with-lock-held ((replay-forms-lock worker-pool))
     (push form (replay-forms worker-pool))))
 
 (defun unevaluated-replay-forms (worker-pool-id evaluated-count)
@@ -358,7 +364,7 @@ with the worker-pool identified by WORKER-POOL-ID, returns a list of the forms
 the worker needs to evaluate in order to be completely up to date."
   (let ((worker-pool (find-worker-pool worker-pool-id)))
     (when worker-pool
-      (bordeaux-threads:with-lock-held ((replay-forms-lock worker-pool))
+      (with-lock-held ((replay-forms-lock worker-pool))
         (nthcdr evaluated-count (reverse (replay-forms worker-pool)))))))
 
 (defun ensure-caught-up-then-evaluate (form worker-pool replay-required)
@@ -366,7 +372,7 @@ the worker needs to evaluate in order to be completely up to date."
 the worker is caught up then evaluates FORM and returns its result.
 REPLAY-REQUIRED indicates whether new workers must evaluate FORM before being
 considered to be caught up."
-  (let ((forms-count (bordeaux-threads:with-lock-held ((replay-forms-lock worker-pool))
+  (let ((forms-count (with-lock-held ((replay-forms-lock worker-pool))
                        (length (replay-forms worker-pool))))
         (master-host-name (master-host-name worker-pool))
         (master-swank-port (master-swank-port worker-pool))
@@ -390,8 +396,8 @@ work generated by MAKE-WORK before being considered to be caught up."
       (eval-on-master make-work list result-done)
       (let* ((work-count (length list))
              (results (make-list work-count))
-             (done-lock (bordeaux-threads:make-lock "dispatch work"))
-             (done-condition (bordeaux-threads:make-condition-variable)))
+             (done-lock (make-lock "dispatch work"))
+             (done-condition (make-condition-variable)))
         (loop for element in list
               for result-cons = results then (cdr result-cons)
               for position from 0
@@ -404,11 +410,11 @@ work generated by MAKE-WORK before being considered to be caught up."
                             ;; Unless we need each worker to evaluate exactly one form, free the
                             ;; worker, so it can process other work.
                             (unless retain-workers (free-worker worker worker-pool))
-                            (bordeaux-threads:with-lock-held (done-lock)
+                            (with-lock-held (done-lock)
                               (decf work-count)
                               (when result-done (funcall result-done position result))
                               (when (zerop work-count)
-                                (bordeaux-threads:condition-notify done-condition)))))
+                                (condition-notify done-condition)))))
                      (let ((work (ensure-caught-up-then-evaluate (funcall make-work element)
                                                                  worker-pool
                                                                  replay-required)))
@@ -416,9 +422,9 @@ work generated by MAKE-WORK before being considered to be caught up."
                                                      work
                                                      #'set-worker
                                                      #'worker-done)))))
-        (bordeaux-threads:with-lock-held (done-lock)
+        (with-lock-held (done-lock)
           (loop until (zerop work-count)
-                do (bordeaux-threads:condition-wait done-condition done-lock)))
+                do (condition-wait done-condition done-lock)))
         ;; When we need each worker to evaluate exactly one form, we end up having allocated every
         ;; worker in the pool, so we need to free them all.
         (when retain-workers
@@ -471,8 +477,8 @@ is equivalent to
              (results (make-array (1+ work-count) :initial-element unknown-result))
              (i 0)
              (reduce-result initial-value)
-             (done-lock (bordeaux-threads:make-lock "parallel reduce"))
-             (done-condition (bordeaux-threads:make-condition-variable)))
+             (done-lock (make-lock "parallel reduce"))
+             (done-condition (make-condition-variable)))
         (loop for element in list
               for position from 0
               do (let ((worker nil)
@@ -480,7 +486,7 @@ is equivalent to
                    (flet ((set-worker (w) (setf worker w))
                           (worker-done (result)
                             (free-worker worker worker-pool)
-                            (bordeaux-threads:with-lock-held (done-lock)
+                            (with-lock-held (done-lock)
                               (setf (aref results position) result)
                               (loop for next = (aref results i)
                                     while (not (eq next unknown-result))
@@ -489,7 +495,7 @@ is equivalent to
                                        (incf i))
                               (decf work-count)
                               (when (zerop work-count)
-                                (bordeaux-threads:condition-notify done-condition)))))
+                                (condition-notify done-condition)))))
                      (let ((work (ensure-caught-up-then-evaluate (funcall make-work element)
                                                                  worker-pool
                                                                  nil)))
@@ -497,12 +503,12 @@ is equivalent to
                                                      work
                                                      #'set-worker
                                                      #'worker-done)))))
-        (bordeaux-threads:with-lock-held (done-lock)
+        (with-lock-held (done-lock)
           (loop until (zerop work-count)
-                do (bordeaux-threads:condition-wait done-condition done-lock)))
+                do (condition-wait done-condition done-lock)))
         reduce-result)))
 
-(defvar *evaluation-id-lock* (bordeaux-threads:make-lock "eval id")
+(defvar *evaluation-id-lock* (make-lock "eval id")
   "Lock protecting access to *EVALUATION-ID*.")
 
 (defvar *evaluation-id* 0 "Counter used to generate a unique ID for EVALUATION instances.")
@@ -511,18 +517,18 @@ is equivalent to
   ((id :reader id
        :type integer
        :initarg :id
-       :initform (bordeaux-threads:with-lock-held (*evaluation-id-lock*)
+       :initform (with-lock-held (*evaluation-id-lock*)
                    (incf *evaluation-id*))
        :documentation "Unique ID for this running evaluation request.")
    (lock :reader lock
-         :initform (bordeaux-threads:make-lock "evaluation")
-         :documentation "Lock protecting the access to this instance.")
+         :initform (make-lock "evaluation")
+         :documentation "Lock protecting access to DONE, DONE-CONDITION, and other mutable slots.")
    (done :accessor done
          :type boolean
          :initform nil
          :documentation "Is the computation done?")
    (done-condition :reader done-condition
-                   :initform (bordeaux-threads:make-condition-variable)
+                   :initform (make-condition-variable)
                    :documentation "Condition variable notified when computation is done."))
   (:documentation "Stores the data needed to process incoming evaluation results."))
 
@@ -530,6 +536,7 @@ is equivalent to
   ((results :reader results
             :type simple-vector
             :initarg :results
+            :initform (missing-argument)
             :documentation "Vector holding returned results.")
    (results-position :accessor results-position
                      :type vector-index
@@ -537,25 +544,25 @@ is equivalent to
                      :documentation "Position where the next result will be recorded."))
   (:documentation "Stores the data needed to process an incoming repeated eval result."))
 
-(defvar *evals-lock* (bordeaux-threads:make-lock "evals")
+(defvar *evals-lock* (make-lock "evals")
   "Lock protecting access to *EVALS*.")
 
 (defvar *evals* '() "List containing an EVALUATION instance for each running computation.")
 
 (defun add-eval (eval)
   "Adds EVAL to the list of in-progress computations."
-  (bordeaux-threads:with-lock-held (*evals-lock*)
+  (with-lock-held (*evals-lock*)
     (push eval *evals*)))
 
 (defun remove-eval (eval)
   "Removes EVAL from the list of in-progress computations."
-  (bordeaux-threads:with-lock-held (*evals-lock*)
+  (with-lock-held (*evals-lock*)
     (setf *evals* (remove eval *evals*))))
 
 (defun find-eval (id)
   "Returns the running EVAL instance identified by ID, or NIL if no
 computation with that ID is currently running."
-  (bordeaux-threads:with-lock-held (*evals-lock*)
+  (with-lock-held (*evals-lock*)
     (find id *evals* :test #'= :key #'id)))
 
 (defun record-repeated-result (id result)
@@ -565,7 +572,7 @@ continue to call RECORD-REPEATED-RESULT with additional results."
   (let ((repeated-eval (find-eval id)))
     (when repeated-eval
       (let ((done nil))
-        (bordeaux-threads:with-lock-held ((lock repeated-eval))
+        (with-lock-held ((lock repeated-eval))
           (let* ((results (results repeated-eval))
                  (length (length results))
                  (position (results-position repeated-eval)))
@@ -576,7 +583,7 @@ continue to call RECORD-REPEATED-RESULT with additional results."
             (when (>= position length)
               (setf done t
                     (done repeated-eval) t)
-              (bordeaux-threads:condition-notify (done-condition repeated-eval)))))
+              (condition-notify (done-condition repeated-eval)))))
         (not done)))))
 
 (defun repeated-work-form (form worker-pool id)
@@ -604,7 +611,7 @@ WORKER-COUNT defaults to the number of workers in WORKER-POOL."
              (retained-workers '()))
         (add-eval results)
         (loop repeat worker-count
-              until (bordeaux-threads:with-lock-held (results-lock)
+              until (with-lock-held (results-lock)
                       (done results))
               do (let ((worker nil))
                    (flet ((set-worker (w) (setf worker w))
@@ -612,7 +619,7 @@ WORKER-COUNT defaults to the number of workers in WORKER-POOL."
                             (declare (ignore result))
                             ;; Workers that finish before all results are available are retained,
                             ;; while those that finish later are immediately released.
-                            (bordeaux-threads:with-lock-held (results-lock)
+                            (with-lock-held (results-lock)
                               (if (not (done results))
                                   (push worker retained-workers)
                                   (free-worker worker worker-pool)))))
@@ -621,9 +628,9 @@ WORKER-COUNT defaults to the number of workers in WORKER-POOL."
                                                      work
                                                      #'set-worker
                                                      #'worker-done)))))
-        (bordeaux-threads:with-lock-held (results-lock)
+        (with-lock-held (results-lock)
           (loop until (done results)
-                do (bordeaux-threads:condition-wait (done-condition results) results-lock)))
+                do (condition-wait (done-condition results) results-lock)))
         ;; TODO(brown): Perhaps UNWIND-PROTECT should be used to ensure the remove happens.
         (remove-eval results)
         ;; We can manipulate RETAINED-WORKERS without a lock because all results are available,
@@ -637,10 +644,11 @@ WORKER-COUNT defaults to the number of workers in WORKER-POOL."
             :initform '()
             :documentation "List holding returned, but unprocessed, results.")
    (results-available :reader results-available
-                      :initform (bordeaux-threads:make-condition-variable)
+                      :initform (make-condition-variable)
                       :documentation "Condition notified when new results are available.")
    (state :accessor state
           :initarg :state
+          :initform (missing-argument)
           :documentation "State of the asynchronous computation, updated from results.")
    (state-counter :accessor state-counter
                   :type (integer 0)
@@ -656,22 +664,22 @@ arguments, the work state and a list of the unprocessed results."
         (state nil)
         (results nil))
     (loop
-      (bordeaux-threads:with-lock-held (lock)
+      (with-lock-held (lock)
         (loop until (results async-eval)
-              do (bordeaux-threads:condition-wait (results-available async-eval) lock))
+              do (condition-wait (results-available async-eval) lock))
         (setf state (state async-eval)
               results (results async-eval)
               (results async-eval) '()))
       (multiple-value-bind (new-state done send-state)
           (funcall update-state state results)
-        (bordeaux-threads:with-lock-held (lock)
+        (with-lock-held (lock)
           (setf (state async-eval) new-state)
           (when (and send-state (not done))
             (incf (state-counter async-eval))))
         (when done
-          (bordeaux-threads:with-lock-held (lock)
+          (with-lock-held (lock)
             (setf (done async-eval) t)
-            (bordeaux-threads:condition-notify (done-condition async-eval)))
+            (condition-notify (done-condition async-eval)))
           (return-from async-results-loop))))))
 
 (defun record-async-result (id result worker-state-counter)
@@ -683,13 +691,13 @@ continue to call ASYNC-RESULT with additional results."
         (state nil)
         (async-eval (find-eval id)))
     (when async-eval
-      (bordeaux-threads:with-lock-held ((lock async-eval))
+      (with-lock-held ((lock async-eval))
         (push result (results async-eval))
         (setf state-counter (state-counter async-eval)
               done (done async-eval))
         (when (/= worker-state-counter state-counter)
           (setf state (state async-eval)))
-        (bordeaux-threads:condition-notify (results-available async-eval))))
+        (condition-notify (results-available async-eval))))
     (list (not done) state-counter state)))
 
 (defun async-work-form (form initial-state worker-pool id)
@@ -731,10 +739,10 @@ the workers to stop and returns the latest work state."
              (results-lock (lock results))
              (retained-workers '()))
         (add-eval results)
-        (bordeaux-threads:make-thread (lambda () (async-results-loop results update-state))
-                                      :name "async results loop")
+        (make-thread (lambda () (async-results-loop results update-state))
+                     :name "async results loop")
         (loop repeat worker-count
-              until (bordeaux-threads:with-lock-held (results-lock)
+              until (with-lock-held (results-lock)
                       (done results))
               do (let ((worker nil))
                    (flet ((set-worker (w) (setf worker w))
@@ -742,7 +750,7 @@ the workers to stop and returns the latest work state."
                             (declare (ignore result))
                             ;; Workers that finish before all results are available are retained,
                             ;; while those that finish later are immediately released.
-                            (bordeaux-threads:with-lock-held (results-lock)
+                            (with-lock-held (results-lock)
                               (if (not (done results))
                                   (push worker retained-workers)
                                   (free-worker worker worker-pool)))))
@@ -751,9 +759,9 @@ the workers to stop and returns the latest work state."
                                                      work
                                                      #'set-worker
                                                      #'worker-done)))))
-        (bordeaux-threads:with-lock-held (results-lock)
+        (with-lock-held (results-lock)
           (loop until (done results)
-                do (bordeaux-threads:condition-wait (done-condition results) results-lock)))
+                do (condition-wait (done-condition results) results-lock)))
         ;; TODO(brown): Perhaps UNWIND-PROTECT should be used to ensure the remove happens.
         (remove-eval results)
         ;; We can manipulate RETAINED-WORKERS without a lock because all results are available, so

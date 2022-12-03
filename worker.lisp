@@ -62,7 +62,7 @@ FORM.  In addition, the returned expression arranges to update the values of
             (setf *last-form-evaled* nil
                   *last-random-state* nil))))
 
-(defvar *replay-forms-counts-lock* (bordeaux-threads:make-lock "evaluated form count")
+(defvar *replay-forms-counts-lock* (make-lock "evaluated form count")
   "Lock protecting access to *REPLAY-FORMS-COUNTS*.")
 
 (defvar *replay-forms-counts* (make-hash-table)
@@ -76,10 +76,9 @@ replay forms after the first LOCAL-COUNT forms are fetched by making a Swank
 connection to host MASTER-HOST-NAME on port MASTER-SWANK-PORT."
   (let ((forms
           (handler-case
-              (swank-client:with-slime-connection (connection master-host-name master-swank-port)
-                (swank-client:slime-eval `(unevaluated-replay-forms ,worker-pool-id ,local-count)
-                                         connection))
-            (swank-client:slime-network-error ()
+              (with-slime-connection (connection master-host-name master-swank-port)
+                (slime-eval `(unevaluated-replay-forms ,worker-pool-id ,local-count) connection))
+            (slime-network-error ()
               '()))))
     (dolist (form forms)
       (eval (debugging-form form))
@@ -91,7 +90,7 @@ POOL-COUNT replay forms associated with the pool identified by WORKER-POOL-ID.
 If it is necessary to evaluate forms in order to catch up, they are fetched by
 making a Swank connection to host MASTER-HOST-NAME on port MASTER-SWANK-PORT."
   (let ((up-to-date nil))
-    (bordeaux-threads:with-lock-held (*replay-forms-counts-lock*)
+    (with-lock-held (*replay-forms-counts-lock*)
       (let ((count (gethash worker-pool-id *replay-forms-counts* 0)))
         (when (< count pool-count)
           (fetch-and-evaluate master-host-name master-swank-port worker-pool-id count))
@@ -110,7 +109,7 @@ bring a worker up to date."
   (catch-up-if-necessary master-host-name master-swank-port worker-pool-id pool-count)
   (let ((result (eval (debugging-form form))))
     (when replay-required
-      (bordeaux-threads:with-lock-held (*replay-forms-counts-lock*)
+      (with-lock-held (*replay-forms-counts-lock*)
         (incf (gethash worker-pool-id *replay-forms-counts* 0))))
     result))
 
@@ -119,9 +118,9 @@ bring a worker up to date."
 then repeatedly calls SEND-RESULT with the new connection as argument.  Returns
 when SEND-RESULT returns NIL."
   (handler-case
-      (swank-client:with-slime-connection (connection master-host-name master-swank-port)
+      (with-slime-connection (connection master-host-name master-swank-port)
         (loop while (funcall send-result connection)))
-    (swank-client:slime-network-error ()
+    (slime-network-error ()
       nil)))
 
 (defun repeatedly-evaluate (form id master-host-name master-swank-port)
@@ -135,13 +134,11 @@ master machine to correctly record the result."
     (setf *last-repeated-eval-work-function* work-function)
     (flet ((send-result (connection)
              (setf *last-random-state* (make-random-state nil))
-             (swank-client:slime-eval `(record-repeated-result ,id ',(funcall work-function))
-                                      connection)))
-      (bordeaux-threads:make-thread
-       (lambda ()
-         (send-many-results #'send-result master-host-name master-swank-port)
-         (clear-debugging-info))
-       :name "repeatedly evaluate")
+             (slime-eval `(record-repeated-result ,id ',(funcall work-function)) connection)))
+      (make-thread (lambda ()
+                     (send-many-results #'send-result master-host-name master-swank-port)
+                     (clear-debugging-info))
+                   :name "repeatedly evaluate")
       ;; We must return a value that can be serialized.
       t)))
 
@@ -162,16 +159,14 @@ master machine to process results and on the worker to update the state."
                (setf *last-random-state* (make-random-state nil))
                (let ((result (funcall work-function state)))
                  (destructuring-bind (continue counter new-state)
-                     (swank-client:slime-eval `(record-async-result ,id ',result ,state-counter)
-                                              connection)
+                     (slime-eval `(record-async-result ,id ',result ,state-counter) connection)
                    (when (and continue (/= counter state-counter))
                      (setf state-counter counter
                            state new-state))
                    continue))))
-        (bordeaux-threads:make-thread
-         (lambda ()
-           (send-many-results #'send-result master-host-name master-swank-port)
-           (clear-debugging-info))
-         :name "async evaluate")
+        (make-thread (lambda ()
+                       (send-many-results #'send-result master-host-name master-swank-port)
+                       (clear-debugging-info))
+                     :name "async evaluate")
         ;; We must return a value that can be serialized.
         t))))

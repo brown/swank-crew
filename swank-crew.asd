@@ -38,8 +38,8 @@ machines, making the debugging of distributed applications easier."
   :version "1.4"
   :author "Robert Brown <robert.brown@gmail.com>"
   :license "New BSD license.  See the copyright messages in individual files."
-  :depends-on (bordeaux-threads
-               com.google.base
+  :depends-on (com.google.base
+               bordeaux-threads
                swank-client)
   :in-order-to ((test-op (test-op swank-crew/test)))
   :components

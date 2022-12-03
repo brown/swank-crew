@@ -32,8 +32,27 @@
 
 (defpackage #:swank-crew
   (:documentation "Evaluate expressions on remote Lisps using the Swank protocol.")
-  (:use #:common-lisp
-        #:com.google.base)
+  (:use #:common-lisp)
+  (:import-from #:com.google.base
+                #:defconst
+                #:missing-argument)
+  (:import-from #:bordeaux-threads
+                #:condition-notify
+                #:condition-wait
+                #:make-condition-variable
+                #:make-lock
+                #:make-thread
+                #:with-lock-held)
+  (:import-from #:swank-client
+                #:slime-close
+                #:slime-connect
+                #:slime-eval
+                #:slime-eval-async
+                #:slime-migrate-evals
+                #:slime-network-error
+                #:slime-pending-evals-p
+                #:swank-connection
+                #:with-slime-connection)
   ;; master.lisp
   (:export #:connect-workers
            #:disconnect-workers
