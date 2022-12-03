@@ -35,7 +35,7 @@
 "Swank Crew is a framework for developing distributed master/worker
 applications.  It uses Slime's Swank protocol to transport data between
 machines, making the debugging of distributed applications easier."
-  :version "1.4"
+  :version "1.5"
   :author "Robert Brown <robert.brown@gmail.com>"
   :license "New BSD license.  See the copyright messages in individual files."
   :depends-on (com.google.base
@@ -50,7 +50,7 @@ machines, making the debugging of distributed applications easier."
 (defsystem swank-crew/test
   :name "Swank Crew test"
   :description "Test code for package SWANK-CREW."
-  :version "1.4"
+  :version "1.5"
   :author "Robert Brown <robert.brown@gmail.com>"
   :license "New BSD license.  See the copyright messages in individual files."
   :depends-on (swank-crew hu.dwim.stefil)
