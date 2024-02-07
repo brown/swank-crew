@@ -35,7 +35,8 @@
   (:use #:common-lisp)
   (:import-from #:com.google.base
                 #:defconst
-                #:missing-argument)
+                #:missing-argument
+                #:vector-index)
   (:import-from #:bordeaux-threads
                 #:condition-notify
                 #:condition-wait
