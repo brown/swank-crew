@@ -34,7 +34,6 @@
   (:documentation "Evaluate expressions on remote Lisps using the Swank protocol.")
   (:use #:common-lisp)
   (:import-from #:com.google.base
-                #:defconst
                 #:missing-argument
                 #:vector-index)
   (:import-from #:bordeaux-threads

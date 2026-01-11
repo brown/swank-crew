@@ -228,7 +228,7 @@ the connection closes."))
 (defmethod reconnect-worker ((connect-info connect-info) close-handler)
   (connect-worker connect-info close-handler))
 
-(defconst +worker-reconnect-interval+ 10 "Seconds between attempts to reconnect workers.")
+(defconstant +worker-reconnect-interval+ 10 "Seconds between attempts to reconnect workers.")
 
 (defun reconnect-workers (worker-pool)
   "Reconnects disconnected workers in WORKER-POOL."
