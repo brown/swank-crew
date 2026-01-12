@@ -12,6 +12,8 @@ farm out work to a gang of worker machines.  If code on a worker throws an
 exception, a Slime stack trace window pops up and you can interactively debug
 the problem using your existing Slime connection to the master.
 
+Swank Crew has been tested with CLISP, CCL, ECL, and SBCL.
+
 ## The Swank Crew API
 
 #### connect-workers host/port-alist master-host-name master-swank-port

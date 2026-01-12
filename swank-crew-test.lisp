@@ -38,6 +38,13 @@
         #:com.google.base
         #:hu.dwim.stefil
         #:swank-crew)
+  (:import-from #:bt2                   ; bordeaux-threads API version 2
+                #:condition-notify
+                #:condition-wait
+                #:make-condition-variable
+                #:make-lock
+                #:make-thread
+                #:with-lock-held)
   (:export #:test-swank-crew))
 
 (in-package #:swank-crew-test)
@@ -52,9 +59,9 @@
          (work '(cons 1 2))
          (expected-result (make-list worker-count :initial-element '(1 . 2)))
          (count 0)
-         (count-lock (bordeaux-threads:make-lock "count")))
+         (count-lock (make-lock :name "count")))
     (flet ((result-done (position element)
-             (bordeaux-threads:with-lock-held (count-lock)
+             (with-lock-held (count-lock)
                (incf count)
                (is (equal (nth position expected-result) element)))))
       (is (equal (eval-form-all-workers pool work :replay-required nil) expected-result))
@@ -138,7 +145,7 @@
 
 (defun master-server ()
   (unless *master-server*
-    (let ((port (swank:create-server :port 0 :dont-close t)))
+    (let ((port (swank:create-server :port 0 :dont-close t :style :spawn)))
       (setf *master-server* port)))
   *master-server*)
 
@@ -147,24 +154,26 @@
 host/port alist describing where the Swank worker servers are listening."
   (let ((work-remaining worker-count)
         (ports (make-array worker-count :initial-element nil))
-        (lock (bordeaux-threads:make-lock "create-workers"))
-        (ready (bordeaux-threads:make-condition-variable)))
+        (lock (make-lock :name "create-workers"))
+        (ready (make-condition-variable)))
     (dotimes (i worker-count)
       (let ((index i)
             ;; Make thread-local copies of the global state required for each worker, so multiple
             ;; workers can run happily in the same Lisp.
             ;; TODO(brown): Use the :INITIAL-BINDINGS argument to MAKE-THREAD for portability.
-            (swank-crew::*replay-forms-counts-lock* (bordeaux-threads:make-lock))
+            (swank-crew::*replay-forms-counts-lock*
+              (make-lock :name (format nil "replay-forms-counts ~D" i)))
             (swank-crew::*replay-forms-counts* (make-hash-table)))
-        (bordeaux-threads:make-thread
+        (make-thread
          (lambda ()
-           (bordeaux-threads:with-lock-held (lock)
-             (setf (aref ports index) (swank:create-server :port 0))
+           (with-lock-held (lock)
+             (setf (aref ports index) (swank:create-server :port 0 :dont-close nil :style :spawn))
              (decf work-remaining)
-             (bordeaux-threads:condition-notify ready))))))
-    (bordeaux-threads:with-lock-held (lock)
+             (condition-notify ready)))
+         :name (format nil "swank test worker ~D" i))))
+    (with-lock-held (lock)
       (loop until (zerop work-remaining)
-            do (bordeaux-threads:condition-wait ready lock)))
+            do (condition-wait ready lock)))
     (loop for port across ports collect (cons "localhost" port))))
 
 (defmacro with-local-workers ((pool worker-count) &body body)

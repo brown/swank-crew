@@ -36,7 +36,7 @@
   (:import-from #:com.google.base
                 #:missing-argument
                 #:vector-index)
-  (:import-from #:bordeaux-threads
+  (:import-from #:bt2                   ; bordeaux-threads API version 2
                 #:condition-notify
                 #:condition-wait
                 #:make-condition-variable
