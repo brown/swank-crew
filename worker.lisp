@@ -62,7 +62,7 @@ FORM.  In addition, the returned expression arranges to update the values of
             (setf *last-form-evaled* nil
                   *last-random-state* nil))))
 
-(defvar *replay-forms-counts-lock* (make-lock "evaluated form count")
+(defvar *replay-forms-counts-lock* (make-lock :name "evaluated form count")
   "Lock protecting access to *REPLAY-FORMS-COUNTS*.")
 
 (defvar *replay-forms-counts* (make-hash-table)
